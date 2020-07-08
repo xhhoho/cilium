@@ -18,6 +18,12 @@ docker-image: clean docker-image-no-clean docker-plugin-image docker-hubble-rela
 	$(MAKE) docker-operator-azure-image
 	$(MAKE) docker-operator-generic-image
 
+docker-images-no-clean: docker-image-no-clean docker-plugin-image docker-hubble-relay-image
+	$(MAKE) docker-operator-image
+	$(MAKE) docker-operator-aws-image
+	$(MAKE) docker-operator-azure-image
+	$(MAKE) docker-operator-generic-image
+
 docker-image-unstripped: clean docker-image-no-clean-unstripped docker-plugin-image-unstripped docker-hubble-relay-image-unstripped
 	$(MAKE) docker-operator-image-unstripped
 	$(MAKE) docker-operator-aws-image-unstripped
