@@ -19,6 +19,19 @@ import (
 	slim_metav1 "github.com/cilium/cilium/pkg/k8s/slim/k8s/apis/meta/v1"
 )
 
+// IPFamily represents the IP Family (IPv4 or IPv6). This type is used
+// to express the family of an IP expressed by a type (i.e. service.Spec.IPFamily)
+type IPFamily string
+
+const (
+	// IPv4Protocol indicates that this IP is IPv4 protocol
+	IPv4Protocol IPFamily = "IPv4"
+	// IPv6Protocol indicates that this IP is IPv6 protocol
+	IPv6Protocol IPFamily = "IPv6"
+	// MaxServiceTopologyKeys is the largest number of topology keys allowed on a service
+	MaxServiceTopologyKeys = 16
+)
+
 // IP address information for entries in the (plural) PodIPs field.
 // Each entry includes:
 //    IP: An IP address allocated to the pod. Routable at least within the cluster.
@@ -594,6 +607,12 @@ type ServiceSpec struct {
 	// sessionAffinityConfig contains the configurations of session affinity.
 	// +optional
 	SessionAffinityConfig *SessionAffinityConfig `json:"sessionAffinityConfig,omitempty" protobuf:"bytes,14,opt,name=sessionAffinityConfig"`
+
+	// ipFamily determines what version of IP will be allocated for the service when
+	// k8s is in dual-stack mode.
+	// More info: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+	// +optional
+	IPFamily IPFamily `json:"ipFamily,omitempty" protobuf:"bytes,15,opt,name=ipFamily"`
 }
 
 // ServicePort contains information on service's port.
@@ -763,16 +782,3 @@ type EndpointsList struct {
 	// List of endpoints.
 	Items []Endpoints `json:"items" protobuf:"bytes,2,rep,name=items"`
 }
-
-// IPFamily represents the IP Family (IPv4 or IPv6). This type is used
-// to express the family of an IP expressed by a type (i.e. service.Spec.IPFamily)
-type IPFamily string
-
-const (
-	// IPv4Protocol indicates that this IP is IPv4 protocol
-	IPv4Protocol IPFamily = "IPv4"
-	// IPv6Protocol indicates that this IP is IPv6 protocol
-	IPv6Protocol IPFamily = "IPv6"
-	// MaxServiceTopologyKeys is the largest number of topology keys allowed on a service
-	MaxServiceTopologyKeys = 16
-)
