@@ -331,6 +331,7 @@ func (s *Server) Serve() (err error) {
 		if os.Getuid() == 0 {
 		    err := api.SetDefaultPermissions(string(s.SocketPath))
 			if err != nil {
+				os.Remove(string(s.SocketPath))
 				return err
 			}
 		}

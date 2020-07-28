@@ -43,6 +43,8 @@ func buildServer(path string) (net.Listener, error) {
 	if os.Getuid() == 0 {
 		err := api.SetDefaultPermissions(path)
 		if err != nil {
+			server.Close()
+			os.Remove(path)
 			return nil, fmt.Errorf("cannot set default permissions on socket %s: %s", path, err)
 		}
 	}

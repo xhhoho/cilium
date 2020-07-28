@@ -110,6 +110,7 @@ func (ch *CiliumHealth) runServer() {
 		time.Sleep(1 * time.Second)
 	}
 	if err := api.SetDefaultPermissions(defaults.SockPath); err != nil {
+		os.Remove(defaults.SockPath)
 		scopedLog.WithError(err).Fatal("Cannot set default permissions on socket")
 	}
 
