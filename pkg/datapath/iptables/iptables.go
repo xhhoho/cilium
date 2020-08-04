@@ -1036,6 +1036,17 @@ func (m *IptablesManager) InstallRules(ifName string) error {
 		}
 	}
 
+	// EKS expects the aws daemonset to set up specific rules for marking
+	// packets. It marks packets coming from another node and restores the
+	// mark on the return path to force a lookup into the main routing
+	// table. We want to reproduce something similar. Please see note in
+	// Reanitialize() in pkg/datapath/loader for more details.
+	if option.Config.Masquerade && option.Config.IPAM == ipamOption.IPAMENI {
+		if err := m.addCiliumENIRules(); err != nil {
+			return fmt.Errorf("cannot install rules for ENI multi-node NodePort: %w", err)
+		}
+	}
+
 	if option.Config.EnableIPSec {
 		if err := m.addCiliumNoTrackXfrmRules(); err != nil {
 			return fmt.Errorf("cannot install xfrm rules: %s", err)
@@ -1139,4 +1150,28 @@ func (m *IptablesManager) addCiliumNoTrackXfrmRules() error {
 		return m.ciliumNoTrackXfrmRules("iptables", "-I")
 	}
 	return nil
+}
+
+func (m *IptablesManager) addCiliumENIRules() error {
+	nfmask := fmt.Sprintf("%#08x", linux_defaults.MarkMultinodeNodeport)
+	ctmask := fmt.Sprintf("%#08x", linux_defaults.MaskMultinodeNodeport)
+	if err := runProg("iptables", append(
+		m.waitArgs,
+		"-t", "mangle",
+		"-A", ciliumPreMangleChain,
+		"-i", option.Config.EgressMasqueradeInterfaces,
+		"-m", "comment", "--comment", "cilium: primary ENI",
+		"-m", "addrtype", "--dst-type", "LOCAL", "--limit-iface-in",
+		"-j", "CONNMARK", "--set-xmark", nfmask+"/"+ctmask),
+		false); err != nil {
+		return err
+	}
+	return runProg("iptables", append(
+		m.waitArgs,
+		"-t", "mangle",
+		"-A", ciliumPreMangleChain,
+		"-i", getDeliveryInterface(""),
+		"-m", "comment", "--comment", "cilium: primary ENI",
+		"-j", "CONNMARK", "--restore-mark", "--nfmask", nfmask, "--ctmask", ctmask),
+		false)
 }

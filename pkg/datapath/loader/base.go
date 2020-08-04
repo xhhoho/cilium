@@ -30,9 +30,12 @@ import (
 	"github.com/cilium/cilium/pkg/common"
 	"github.com/cilium/cilium/pkg/datapath"
 	"github.com/cilium/cilium/pkg/datapath/alignchecker"
+	"github.com/cilium/cilium/pkg/datapath/linux/linux_defaults"
+	"github.com/cilium/cilium/pkg/datapath/linux/route"
 	datapathOption "github.com/cilium/cilium/pkg/datapath/option"
 	"github.com/cilium/cilium/pkg/datapath/prefilter"
 	"github.com/cilium/cilium/pkg/defaults"
+	ipamOption "github.com/cilium/cilium/pkg/ipam/option"
 	"github.com/cilium/cilium/pkg/logging/logfields"
 	"github.com/cilium/cilium/pkg/node"
 	"github.com/cilium/cilium/pkg/option"
@@ -105,6 +108,43 @@ func writePreFilterHeader(preFilter *prefilter.PreFilter, dir string) error {
 	fmt.Fprint(fw, " */\n\n")
 	preFilter.WriteConfig(fw)
 	return fw.Flush()
+}
+
+// Return the list of interfaces with egress masquerading.
+// - If option.Config.Masquerade is disabled, return an empty slice.
+// - If option.Config.EgressMasqueradeInterfaces is set to a simple interface
+//   name, return its value.
+// - If it is empty, return the list of all interfaces.
+// - If it has a '+' suffix, return the names of all matching interfaces.
+func getEgressMasqueradeInterfaces() ([]string, error) {
+	var ifaces []string
+	if !option.Config.Masquerade {
+		return ifaces, nil
+	}
+
+	egMasqIfOpt := &option.Config.EgressMasqueradeInterfaces
+	if *egMasqIfOpt != "" && !strings.HasSuffix(*egMasqIfOpt, "+") {
+		ifaces = append(ifaces, option.Config.EgressMasqueradeInterfaces)
+		return ifaces, nil
+	}
+
+	links, err := netlink.LinkList()
+	if err != nil {
+		return ifaces, err
+	}
+	if *egMasqIfOpt == "" {
+		for _, l := range links {
+			ifaces = append(ifaces, l.Attrs().Name)
+		}
+	} else {
+		ifPrefix := strings.TrimSuffix(*egMasqIfOpt, "+")
+		for _, l := range links {
+			if strings.HasPrefix(l.Attrs().Name, ifPrefix) {
+				ifaces = append(ifaces, l.Attrs().Name)
+			}
+		}
+	}
+	return ifaces, nil
 }
 
 // Reinitialize (re-)configures the base datapath configuration including global
@@ -292,6 +332,41 @@ func (l *Loader) Reinitialize(ctx context.Context, o datapath.BaseProgramOwner, 
 	clockSource := []string{"ktime", "jiffies"}
 	log.Infof("Setting up base BPF datapath (BPF %s instruction set, %s clock source)",
 		args[initBPFCPU], clockSource[option.Config.ClockSource])
+
+	// EKS expects the aws daemonset to set up the following rules that
+	// relate to NodePort traffic between nodes:
+	//
+	// # sysctl -w net.ipv4.conf.eth0.rp_filter=2
+	// # iptables -t mangle -A PREROUTING -i eth0 -m comment --comment "AWS, primary ENI" -m addrtype --dst-type LOCAL --limit-iface-in -j CONNMARK --set-xmark 0x80/0x80
+	// # iptables -t mangle -A PREROUTING -i eni+ -m comment --comment "AWS, primary ENI" -j CONNMARK --restore-mark --nfmask 0x80 --ctmask 0x80
+	// # ip rule add fwmark 0x80/0x80 lookup main
+	//
+	// It marks packets coming from another node through eth0, and restores
+	// the mark on the return path to force a lookup into the main routing
+	// table. Without these rules, the "ip rules" set by the cilium-cni
+	// plugin tell the host to lookup into the table related to the VPC for
+	// which the CIDR used by the endpoint has been configured.
+	//
+	// We want to reproduce equivalent rules to ensure correct routing.
+	// See also iptables.addCiliumENIRules().
+	if option.Config.Masquerade && option.Config.IPAM == ipamOption.IPAMENI {
+		ifaces, err := getEgressMasqueradeInterfaces()
+		if err != nil {
+			return fmt.Errorf("failed to set rp_filter for interfaces with egress masquerading for ENI multi-node NodePort: %w", err)
+		}
+		for _, iface := range ifaces {
+			sysSettings = append(sysSettings,
+				setting{"net.ipv4.conf." + iface + ".rp_filter", "2", false})
+		}
+		if err := route.ReplaceRule(route.Rule{
+			Priority: linux_defaults.RulePriorityNodeport,
+			Mark:     linux_defaults.MarkMultinodeNodeport,
+			Mask:     linux_defaults.MaskMultinodeNodeport,
+			Table:    route.MainTable,
+		}); err != nil {
+			return fmt.Errorf("unable to install ip rule for ENI multi-node NodePort: %w", err)
+		}
+	}
 
 	for _, s := range sysSettings {
 		log.Infof("Setting sysctl %s=%s", s.name, s.val)
