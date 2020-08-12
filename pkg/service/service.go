@@ -684,8 +684,6 @@ func (s *Service) restoreServicesLocked() error {
 			logfields.ServiceID: svc.Frontend.ID,
 			logfields.ServiceIP: svc.Frontend.L3n4Addr.String(),
 		})
-		scopedLog.Debug("Restoring service")
-
 		if _, err := RestoreID(svc.Frontend.L3n4Addr, uint32(svc.Frontend.ID)); err != nil {
 			failed++
 			scopedLog.WithError(err).Warning("Unable to restore service ID")

@@ -171,7 +171,11 @@ type RevNatValue interface {
 type BackendIDByServiceIDSet map[uint16]map[uint16]struct{} // svc ID => backend ID
 
 func svcFrontend(svcKey ServiceKey, svcValue ServiceValue) (*loadbalancer.L3n4AddrID, error) {
-	p, err := loadbalancer.NewL4TypeFromNumber(svcKey.GetProtocol())
+	return svcFrontendDef(svcKey, svcValue, loadbalancer.L4Type(""))
+}
+
+func svcFrontendDef(svcKey ServiceKey, svcValue ServiceValue, defProto loadbalancer.L4Type) (*loadbalancer.L3n4AddrID, error) {
+	p, err := loadbalancer.NewL4TypeFromNumberDef(svcKey.GetProtocol(), defProto)
 	if err != nil {
 		return nil, err
 	}
@@ -184,9 +188,13 @@ func svcFrontend(svcKey ServiceKey, svcValue ServiceValue) (*loadbalancer.L3n4Ad
 }
 
 func svcBackend(backendID loadbalancer.BackendID, backend BackendValue) (*loadbalancer.Backend, error) {
+	return svcBackendDef(backendID, backend, loadbalancer.L4Type(""))
+}
+
+func svcBackendDef(backendID loadbalancer.BackendID, backend BackendValue, defProto loadbalancer.L4Type) (*loadbalancer.Backend, error) {
 	beIP := backend.GetAddress()
 	bePort := backend.GetPort()
-	p, err := loadbalancer.NewL4TypeFromNumber(backend.GetProtocol())
+	p, err := loadbalancer.NewL4TypeFromNumberDef(backend.GetProtocol(), defProto)
 	if err != nil {
 		return nil, err
 	}

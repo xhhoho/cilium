@@ -272,7 +272,7 @@ func (*LBBPFMap) DumpServiceMaps() ([]*loadbalancer.SVC, []error) {
 		svcKey := key.DeepCopyMapKey().(ServiceKey)
 		svcValue := value.DeepCopyMapValue().(ServiceValue)
 
-		fe, err := svcFrontend(svcKey, svcValue)
+		fe, err := svcFrontendDef(svcKey, svcValue, loadbalancer.TCP)
 		if err != nil {
 			errors = append(errors, err)
 		}
@@ -297,7 +297,7 @@ func (*LBBPFMap) DumpServiceMaps() ([]*loadbalancer.SVC, []error) {
 			return
 		}
 
-		be, err := svcBackend(backendID, backendValue)
+		be, err := svcBackendDef(backendID, backendValue, loadbalancer.TCP)
 		if err != nil {
 			errors = append(errors, err)
 		}

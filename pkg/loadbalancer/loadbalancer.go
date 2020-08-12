@@ -272,13 +272,20 @@ func NewL4Type(name string) (L4Type, error) {
 }
 
 func NewL4TypeFromNumber(proto uint8) (L4Type, error) {
+	return NewL4TypeFromNumberDef(proto, L4Type(""))
+}
+
+func NewL4TypeFromNumberDef(proto uint8, defProto L4Type) (L4Type, error) {
 	switch proto {
 	case 6:
 		return TCP, nil
 	case 17:
 		return UDP, nil
 	default:
-		return "", fmt.Errorf("unknown L4 protocol")
+		if string(defProto) == "" {
+			return "", fmt.Errorf("unknown L4 protocol")
+		}
+		return defProto, nil
 	}
 }
 
