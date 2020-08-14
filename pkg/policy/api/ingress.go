@@ -15,7 +15,9 @@
 package api
 
 import (
+	k8sConst "github.com/cilium/cilium/pkg/k8s/apis/cilium.io"
 	slim_metav1 "github.com/cilium/cilium/pkg/k8s/slim/k8s/apis/meta/v1"
+	"github.com/cilium/cilium/pkg/labels"
 )
 
 // IngressRule contains all rule types which can be applied at ingress,
@@ -147,18 +149,29 @@ func (i *IngressRule) GetSourceEndpointSelectorsWithRequirements(requirements []
 		i.SetAggregatedSelectors()
 	}
 	res := make(EndpointSelectorSlice, 0, len(i.FromEndpoints)+len(i.AggregatedSelectors))
-	if len(requirements) > 0 && len(i.FromEndpoints) > 0 {
-		for idx := range i.FromEndpoints {
-			sel := *i.FromEndpoints[idx].DeepCopy()
-			sel.MatchExpressions = append(sel.MatchExpressions, requirements...)
-			sel.SyncRequirementsWithLabelSelector()
-			// Even though this string is deep copied, we need to override it
-			// because we are updating the contents of the MatchExpressions.
-			sel.CachedLabelSelectorString = sel.LabelSelector.String()
-			res = append(res, sel)
+
+	// Loop through each fromEndpoint entry and append requirements to MatchExpression.
+	// If the FromEndpoint selector is a wildcard entry then add a match expression to
+	// select all endpoints that have namespace label. This is to make sure we don't
+	// end up with a truly empty EndpointSelector.
+	for idx := range i.FromEndpoints {
+		sel := *i.FromEndpoints[idx].DeepCopy()
+		if sel.IsWildcard() {
+			sel.MatchExpressions = []slim_metav1.LabelSelectorRequirement{{
+				Key:      labels.LabelSourceK8sKeyPrefix + k8sConst.PodNamespaceLabel,
+				Operator: slim_metav1.LabelSelectorOpExists,
+			}}
 		}
-	} else {
-		res = append(res, i.FromEndpoints...)
+
+		if len(requirements) > 0 {
+			sel.MatchExpressions = append(sel.MatchExpressions, requirements...)
+		}
+
+		sel.SyncRequirementsWithLabelSelector()
+		// Even though this string is deep copied, we need to override it
+		// because we are updating the contents of the MatchExpressions.
+		sel.CachedLabelSelectorString = sel.LabelSelector.String()
+		res = append(res, sel)
 	}
 
 	return append(res, i.AggregatedSelectors...)

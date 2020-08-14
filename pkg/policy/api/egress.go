@@ -17,7 +17,9 @@ package api
 import (
 	"context"
 
+	k8sConst "github.com/cilium/cilium/pkg/k8s/apis/cilium.io"
 	slim_metav1 "github.com/cilium/cilium/pkg/k8s/slim/k8s/apis/meta/v1"
+	"github.com/cilium/cilium/pkg/labels"
 )
 
 // EgressRule contains all rule types which can be applied at egress, i.e.
@@ -201,19 +203,30 @@ func (e *EgressRule) GetDestinationEndpointSelectorsWithRequirements(requirement
 	}
 	res := make(EndpointSelectorSlice, 0, len(e.ToEndpoints)+len(e.AggregatedSelectors))
 
-	if len(requirements) > 0 && len(e.ToEndpoints) > 0 {
-		for idx := range e.ToEndpoints {
-			sel := *e.ToEndpoints[idx].DeepCopy()
-			sel.MatchExpressions = append(sel.MatchExpressions, requirements...)
-			sel.SyncRequirementsWithLabelSelector()
-			// Even though this string is deep copied, we need to override it
-			// because we are updating the contents of the MatchExpressions.
-			sel.CachedLabelSelectorString = sel.LabelSelector.String()
-			res = append(res, sel)
+	// Loop through each ToEndpoint entry and append requirements to MatchExpression.
+	// If the ToEndpoint selector is a wildcard entry then add a match expression to
+	// select all endpoints that have namespace label. This is to make sure we don't
+	// end up with a truly empty EndpointSelector.
+	for idx := range e.ToEndpoints {
+		sel := *e.ToEndpoints[idx].DeepCopy()
+		if sel.IsWildcard() {
+			sel.MatchExpressions = []slim_metav1.LabelSelectorRequirement{{
+				Key:      labels.LabelSourceK8sKeyPrefix + k8sConst.PodNamespaceLabel,
+				Operator: slim_metav1.LabelSelectorOpExists,
+			}}
 		}
-	} else {
-		res = append(res, e.ToEndpoints...)
+
+		if len(requirements) > 0 {
+			sel.MatchExpressions = append(sel.MatchExpressions, requirements...)
+		}
+
+		sel.SyncRequirementsWithLabelSelector()
+		// Even though this string is deep copied, we need to override it
+		// because we are updating the contents of the MatchExpressions.
+		sel.CachedLabelSelectorString = sel.LabelSelector.String()
+		res = append(res, sel)
 	}
+
 	return append(res, e.AggregatedSelectors...)
 }
 
