@@ -4100,3 +4100,31 @@ func (kub *Kubectl) GetDNSProxyPort(ciliumPod string) int {
 	}
 	return port
 }
+
+// CleanupCiliumComponents removes all the cilium related components from the cluster.
+// This is best effort, any error occurring when deleting resources is ignored.
+func (kub *Kubectl) CleanupCiliumComponents() {
+	ginkgoext.By("Cleaning up Cilium components")
+
+	var (
+		wg sync.WaitGroup
+
+		resourcesToDelete = map[string]string{
+			"configmap":          "cilium-config",
+			"daemonset":          "cilium cilium-node-init",
+			"deployment":         "cilium-operator",
+			"clusterrolebinding": "cilium cilium-operator",
+			"clusterrole":        "cilium cilium-operator",
+			"serviceaccount":     "cilium cilium-operator",
+		}
+	)
+
+	wg.Add(len(resourcesToDelete))
+	for resourceType, resource := range resourcesToDelete {
+		go func(resource, resourceType string) {
+			_ = kub.DeleteResource(resourceType, "-n "+CiliumNamespace+" "+resource)
+			wg.Done()
+		}(resource, resourceType)
+	}
+	wg.Wait()
+}
